@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supply-chain-copilot"
+version = "0.1.0"
+description = "Plain-English supply chain questions → Claude agent over SQLite sales + synthetic inventory"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pulp>=2.9.0,<3",
+    "openpyxl>=3.1.5",
+    "pytest>=8.3.0",
+    "pyyaml>=6.0.2",
+    "pandas>=2.2.0",
+    "numpy>=2.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0"]
+
+[project.scripts]
+sc-load = "src.db.load_data:main"
+sc-synth = "src.db.synth_inventory:main"
+sc-backtest = "src.forecast.backtest:main"
+sc-optimize = "src.optimize.reorder:main"
+sc-evals = "evals.run_evals:main"
+sc-api = "src.api.main:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "evals*"]
+
+[tool.setuptools.package-data]
+"src.db" = ["schema.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
