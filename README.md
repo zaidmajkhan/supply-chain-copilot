@@ -1,6 +1,6 @@
 # Supply Chain Ops Copilot
 
-**Status: in progress** — core MVP code is in place; full agent evals are not marked passing until you run them with a real DB + `ANTHROPIC_API_KEY`.
+**Status: in progress** — building day by day; full agent evals are not marked passing until you run them with a real DB + `ANTHROPIC_API_KEY`.
 
 Plain-English supply chain questions → Claude API agent (tool use) → SQLite queries, demand forecast, budget-constrained reorder optimization, Excel export.
 
@@ -16,24 +16,6 @@ CI and unit tests use `tests/fixtures/sample_train.csv` only (a few stores/items
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  Q[User question] --> API[FastAPI /ask]
-  API --> Agent[Claude tool-use loop]
-  Agent --> SQL[run_sql readonly SQLite]
-  Agent --> FC[forecast_demand]
-  Agent --> OPT[optimize_reorder PuLP]
-  Agent --> XLS[export_excel openpyxl]
-  SQL --> DB[(SQLite)]
-  FC --> DB
-  OPT --> DB
-  Load[load_data.py] --> DB
-  Synth[synth_inventory.py] --> DB
-  Kaggle[train.csv sales] --> Load
-```
-
-ASCII view:
-
 ```
 question → FastAPI /ask → Claude agent
               ├─ run_sql          → SQLite (mode=ro, SELECT-only)
@@ -42,108 +24,101 @@ question → FastAPI /ask → Claude agent
               └─ export_excel     → openpyxl .xlsx
 ```
 
-## Setup
+Data path today:
+- `load_data.py` loads Kaggle sales into SQLite
+- `synth_inventory.py` fills synthetic suppliers + inventory (seed=42)
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+## Setup (Windows)
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
 pip install -e .
-
-# Optional for /ask agent:
-export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Python **≥ 3.11**.
 
-## Download sales data (Kaggle)
-
-```bash
-# requires ~/.kaggle/kaggle.json
-kaggle competitions download -c demand-forecasting-kernels-only -p data/
-unzip -o data/demand-forecasting-kernels-only.zip -d data/
-# expect data/train.csv
+Optional for the agent later:
+```bat
+set ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Or download `train.csv` manually from the competition page into `data/train.csv`.
+## Download sales data (Kaggle)
 
-If `data/train.csv` is missing, `sc-load` / `load_data.py` exits with instructions — it will **not** invent a fake full Kaggle dump.
+```bat
+pip install kaggle
+kaggle competitions download -c demand-forecasting-kernels-only -p data/
+tar -xf data\demand-forecasting-kernels-only.zip -C data
+```
+
+Expect `data\train.csv`. Requires `%USERPROFILE%\.kaggle\kaggle.json`.
+
+If `data\train.csv` is missing, `sc-load` exits with instructions — it will **not** invent a fake full Kaggle dump.
 
 ## Load + synthesize
 
-```bash
+```bat
 sc-load          # → data/supply_chain.db , prints row counts
 sc-synth         # seed=42 synthetic suppliers + inventory
 ```
 
-## Forecast backtest
+`data/` and `*.db` are gitignored — do not push them.
 
-```bash
+## Forecast backtest (later day)
+
+```bat
 sc-backtest --max-series 20
-# or one series:
 sc-backtest --store 1 --item 1
 ```
 
-Metrics printed are **live WAPE / RMSE** from the run. Do not copy invented accuracy numbers into docs — paste output from your machine after a run.
+Metrics printed are **live WAPE / RMSE** from the run. Do not invent accuracy numbers.
 
-**Baseline:** seasonal-naive with **lag-7** (same weekday). Chosen over lag-365 so short series (and the test fixture) still work while capturing weekly seasonality on daily data.
-
+**Baseline:** seasonal-naive with **lag-7** (same weekday).  
 **Holdout:** last **13 weeks** only, time-ordered. No random splits.
 
-**Model:** seasonal pattern blended toward a 14-day moving-average level (still interview-explainable).
+## Reorder optimization (later day)
 
-## Reorder optimization
-
-```bash
+```bat
 sc-optimize --budget 5000 --limit 50
 ```
 
 - **Objective:** maximize units ordered toward unmet forecast demand.
-- **Constraints:** total cost ≤ budget; `0 ≤ order_qty ≤ max(0, forecast − on_hand)`; integer quantities.
+- **Constraints:** total cost ≤ budget; integer quantities.
 - Uses **synthetic** on-hand / unit cost / lead time.
 
-## API
+## API (later day)
 
-```bash
-export SUPPLY_CHAIN_DB=data/supply_chain.db   # optional override
-sc-api   # uvicorn on port 8741
-# or: uvicorn src.api.main:app --host 0.0.0.0 --port 8741
+```bat
+set SUPPLY_CHAIN_DB=data\supply_chain.db
+sc-api
 ```
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Liveness + db/key flags |
-| POST | `/ask` | `{ "question": "..." }` → agent (needs `ANTHROPIC_API_KEY`) |
+| POST | `/ask` | Agent (needs `ANTHROPIC_API_KEY`) |
 | POST | `/forecast` | Direct forecast (no LLM) |
 | POST | `/optimize` | Direct reorder plan (no LLM) |
 | POST | `/export` | Write Excel plan (no LLM) |
 
-If the API key is missing, `/ask` returns **400** with a clear message (does not crash obscurely).
+## Evals (later day)
 
-## Evals
-
-```bash
-sc-evals                  # fixture DB + SQL expected checks
-sc-evals --live-agent     # also calls Claude (needs API key)
+```bat
+sc-evals
+sc-evals --live-agent
 ```
 
-`evals/questions.yaml` has **30+** questions. Expected SQL answers are filled for the **fixture** DB. After loading full Kaggle data, recompute expected rows — do not invent agent accuracy scores here or in this README.
+## Tests & CI (later day)
 
-## Tests & CI
-
-```bash
+```bat
 pytest -q
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) installs the package and runs pytest on push/PR. No API key and no full Kaggle file required.
+## Docker (later day)
 
-## Docker
-
-```bash
+```bat
 docker build -t supply-chain-copilot .
-docker run --rm -p 8741:8741 \
-  -e ANTHROPIC_API_KEY \
-  -v "$PWD/data:/app/data" \
-  supply-chain-copilot
+docker run --rm -p 8741:8741 -e ANTHROPIC_API_KEY -v "%CD%/data:/app/data" supply-chain-copilot
 ```
 
 ## Synthetic inventory assumptions
@@ -166,23 +141,21 @@ These are **not** real warehouse snapshots.
 ## Project layout
 
 ```
-README.md, PLAN.md, pyproject.toml, docs/explain.md
+README.md, .gitignore, pyproject.toml
 data/                 # gitignored (train.csv, *.db, exports)
 src/db/               # schema, load, synth
-src/forecast/         # baseline, model, backtest
-src/optimize/         # reorder PuLP
-src/agent/            # tools, agent loop, prompts
-src/api/              # FastAPI
-evals/                # questions.yaml + harness
-tests/                # pytest + fixtures/sample_train.csv
-.github/workflows/ci.yml
-Dockerfile
+src/forecast/         # baseline, model, backtest (later)
+src/optimize/         # reorder PuLP (later)
+src/agent/            # tools, agent loop (later)
+src/api/              # FastAPI (later)
+evals/                # questions + harness (later)
+tests/                # pytest + fixtures
+.github/workflows/    # CI (later)
+Dockerfile            # later
 ```
 
 ## What still needs you
 
-1. **Kaggle `data/train.csv`** for the full sales history (optional for tests; required for the real portfolio demo).
-2. **`ANTHROPIC_API_KEY`** for `/ask` and `sc-evals --live-agent`.
-3. Run backtest/evals yourself and record live metrics — keep PLAN.md Status **IN PROGRESS** until the eval harness passes to your bar.
-
-See [PLAN.md](PLAN.md) and [docs/explain.md](docs/explain.md).
+1. Keep shipping one honest learned slice per day.
+2. Own every GitHub commit.
+3. Keep Status **in progress** until live evals pass.
